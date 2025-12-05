@@ -725,7 +725,10 @@ class SearchFactory:
     ) -> Optional[EmbeddingModelConfig]:
         """Build EmbeddingModelConfig by selecting the right model key from defaults.yml.
 
-        For OpenAI embeddings, selects between embedding_small and embedding_large:
+        Supports custom model override via EMBEDDING_MODEL environment variable.
+        If EMBEDDING_MODEL is set, it takes precedence over dimension-based selection.
+
+        For OpenAI embeddings (when EMBEDDING_MODEL is not set):
         - 3072: uses embedding_large (text-embedding-3-large)
         - 1536: uses embedding_small (text-embedding-3-small)
         - Other: uses the provided model_key (e.g., "embedding" as fallback)
@@ -740,6 +743,17 @@ class SearchFactory:
         """
         if not model_key:
             return None
+
+        # Check for custom EMBEDDING_MODEL override (always takes precedence)
+        if settings.EMBEDDING_MODEL:
+            # Use custom model with config from defaults.yml for tokenizer settings
+            base_model_dict = provider_spec.get(model_key) or provider_spec.get(
+                "embedding_large"
+            )
+            if base_model_dict:
+                custom_model_dict = base_model_dict.copy()
+                custom_model_dict["name"] = settings.EMBEDDING_MODEL
+                return EmbeddingModelConfig(**custom_model_dict)
 
         # For OpenAI provider, select the right model key based on vector_size
         actual_model_key = model_key

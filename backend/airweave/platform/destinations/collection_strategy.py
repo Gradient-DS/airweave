@@ -49,16 +49,25 @@ def get_physical_collection_name(vector_size: int | None = None) -> str:
 def get_openai_embedding_model_for_vector_size(vector_size: int) -> str:
     """Get OpenAI embedding model name for given vector dimensions.
 
+    Supports custom model override via EMBEDDING_MODEL environment variable.
+    If EMBEDDING_MODEL is set, it takes precedence over dimension-based selection.
+
     Args:
         vector_size: Vector dimensions (3072 or 1536)
 
     Returns:
-        - "text-embedding-3-large" for 3072-dim
-        - "text-embedding-3-small" for 1536-dim
+        - Custom model from EMBEDDING_MODEL if set (always takes precedence)
+        - "text-embedding-3-large" for 3072-dim (default)
+        - "text-embedding-3-small" for 1536-dim (default)
 
     Raises:
         ValueError: For vector sizes that don't use OpenAI models (e.g., 384 uses local model)
     """
+    # Check for custom override first (always takes precedence)
+    if settings.EMBEDDING_MODEL:
+        return settings.EMBEDDING_MODEL
+
+    # Fall back to dimension-based selection
     if vector_size == 3072:
         return "text-embedding-3-large"
     elif vector_size == 1536:
