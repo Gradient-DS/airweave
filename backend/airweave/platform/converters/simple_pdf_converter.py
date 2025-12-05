@@ -6,9 +6,10 @@ from typing import Dict, List
 
 from pdfminer.high_level import extract_text as pdfminer_extract_text
 
+from airweave.core.logging import logger
+from airweave.platform.converters._base import BaseTextConverter
 from airweave.platform.sync.async_helpers import run_in_thread_pool
 from airweave.platform.sync.exceptions import EntityProcessingError
-from airweave.platform.converters._base import BaseTextConverter
 
 
 class SimplePdfConverter(BaseTextConverter):
@@ -21,11 +22,6 @@ class SimplePdfConverter(BaseTextConverter):
     BATCH_SIZE = 10
     MAX_CONCURRENT = 20
 
-    def __init__(self):
-        """Initialize SimplePdfConverter."""
-        super().__init__()
-        self.logger.info("Initialized SimplePdfConverter (local extraction)")
-
     async def convert_batch(self, paths: List[Path]) -> Dict[Path, str]:
         """Extract text from multiple PDF files.
 
@@ -35,7 +31,7 @@ class SimplePdfConverter(BaseTextConverter):
         Returns:
             Dict mapping path to extracted markdown text
         """
-        self.logger.debug(f"Converting {len(paths)} PDFs with simple extraction")
+        logger.debug(f"Converting {len(paths)} PDFs with simple extraction")
 
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT)
         tasks = [self._convert_single(path, semaphore) for path in paths]
@@ -44,13 +40,13 @@ class SimplePdfConverter(BaseTextConverter):
         output = {}
         for path, result in zip(paths, results):
             if isinstance(result, Exception):
-                self.logger.error(f"Failed to convert {path.name}: {result}")
+                logger.error(f"Failed to convert {path.name}: {result}")
                 output[path] = None
             else:
                 output[path] = result
 
         success_count = sum(1 for v in output.values() if v is not None)
-        self.logger.info(
+        logger.info(
             f"Converted {success_count}/{len(paths)} PDFs successfully"
         )
 
@@ -76,7 +72,7 @@ class SimplePdfConverter(BaseTextConverter):
                 )
 
                 if not text or not text.strip():
-                    self.logger.warning(
+                    logger.warning(
                         f"No text extracted from {path.name} with pdfminer, "
                         "trying PyPDF2 fallback"
                     )
@@ -86,14 +82,14 @@ class SimplePdfConverter(BaseTextConverter):
                 text = text.strip()
 
                 if not text:
-                    self.logger.warning(f"No text content in {path.name}")
+                    logger.warning(f"No text content in {path.name}")
                     return ""
 
                 # Wrap in markdown code fence for consistency
                 return f"```\n{text}\n```"
 
             except Exception as e:
-                self.logger.error(
+                logger.error(
                     f"Error extracting text from {path.name}: {e}",
                     exc_info=True
                 )
@@ -125,5 +121,5 @@ class SimplePdfConverter(BaseTextConverter):
             return await run_in_thread_pool(extract)
 
         except Exception as e:
-            self.logger.error(f"PyPDF2 fallback failed for {path.name}: {e}")
+            logger.error(f"PyPDF2 fallback failed for {path.name}: {e}")
             return ""

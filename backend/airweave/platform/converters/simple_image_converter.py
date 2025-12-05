@@ -6,9 +6,10 @@ from typing import Dict, List
 
 from PIL import Image
 
+from airweave.core.logging import logger
+from airweave.platform.converters._base import BaseTextConverter
 from airweave.platform.sync.async_helpers import run_in_thread_pool
 from airweave.platform.sync.exceptions import EntityProcessingError
-from airweave.platform.converters._base import BaseTextConverter
 
 
 class SimpleImageConverter(BaseTextConverter):
@@ -21,13 +22,6 @@ class SimpleImageConverter(BaseTextConverter):
     BATCH_SIZE = 20
     MAX_CONCURRENT = 30
 
-    def __init__(self):
-        """Initialize SimpleImageConverter."""
-        super().__init__()
-        self.logger.info(
-            "Initialized SimpleImageConverter (metadata only, no OCR)"
-        )
-
     async def convert_batch(self, paths: List[Path]) -> Dict[Path, str]:
         """Extract metadata from multiple images.
 
@@ -37,7 +31,7 @@ class SimpleImageConverter(BaseTextConverter):
         Returns:
             Dict mapping path to metadata text
         """
-        self.logger.debug(f"Processing {len(paths)} images")
+        logger.debug(f"Processing {len(paths)} images")
 
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT)
         tasks = [self._convert_single(path, semaphore) for path in paths]
@@ -46,13 +40,13 @@ class SimpleImageConverter(BaseTextConverter):
         output = {}
         for path, result in zip(paths, results):
             if isinstance(result, Exception):
-                self.logger.error(f"Failed to process {path.name}: {result}")
+                logger.error(f"Failed to process {path.name}: {result}")
                 output[path] = None
             else:
                 output[path] = result
 
         success_count = sum(1 for v in output.values() if v is not None)
-        self.logger.info(
+        logger.info(
             f"Processed {success_count}/{len(paths)} images successfully"
         )
 
@@ -99,7 +93,7 @@ class SimpleImageConverter(BaseTextConverter):
                 return text
 
             except Exception as e:
-                self.logger.error(
+                logger.error(
                     f"Error extracting metadata from {path.name}: {e}",
                     exc_info=True
                 )

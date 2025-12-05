@@ -6,9 +6,10 @@ from typing import Dict, List
 
 from docx import Document
 
+from airweave.core.logging import logger
+from airweave.platform.converters._base import BaseTextConverter
 from airweave.platform.sync.async_helpers import run_in_thread_pool
 from airweave.platform.sync.exceptions import EntityProcessingError
-from airweave.platform.converters._base import BaseTextConverter
 
 
 class SimpleDocxConverter(BaseTextConverter):
@@ -16,11 +17,6 @@ class SimpleDocxConverter(BaseTextConverter):
 
     BATCH_SIZE = 10
     MAX_CONCURRENT = 20
-
-    def __init__(self):
-        """Initialize SimpleDocxConverter."""
-        super().__init__()
-        self.logger.info("Initialized SimpleDocxConverter (local extraction)")
 
     async def convert_batch(self, paths: List[Path]) -> Dict[Path, str]:
         """Extract text from multiple DOCX files.
@@ -31,7 +27,7 @@ class SimpleDocxConverter(BaseTextConverter):
         Returns:
             Dict mapping path to extracted markdown text
         """
-        self.logger.debug(f"Converting {len(paths)} DOCX files")
+        logger.debug(f"Converting {len(paths)} DOCX files")
 
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT)
         tasks = [self._convert_single(path, semaphore) for path in paths]
@@ -40,13 +36,13 @@ class SimpleDocxConverter(BaseTextConverter):
         output = {}
         for path, result in zip(paths, results):
             if isinstance(result, Exception):
-                self.logger.error(f"Failed to convert {path.name}: {result}")
+                logger.error(f"Failed to convert {path.name}: {result}")
                 output[path] = None
             else:
                 output[path] = result
 
         success_count = sum(1 for v in output.values() if v is not None)
-        self.logger.info(
+        logger.info(
             f"Converted {success_count}/{len(paths)} DOCX files successfully"
         )
 
@@ -106,13 +102,13 @@ class SimpleDocxConverter(BaseTextConverter):
                 text = await run_in_thread_pool(extract)
 
                 if not text or not text.strip():
-                    self.logger.warning(f"No text extracted from {path.name}")
+                    logger.warning(f"No text extracted from {path.name}")
                     return ""
 
                 return text.strip()
 
             except Exception as e:
-                self.logger.error(
+                logger.error(
                     f"Error extracting text from {path.name}: {e}",
                     exc_info=True
                 )
