@@ -127,6 +127,7 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: Optional[str] = None
     EMBEDDING_MODEL: Optional[str] = None  # Custom embedding model override
+    EMBEDDING_DIM: Optional[int] = None  # Custom embedding dimension override
     ANTHROPIC_API_KEY: Optional[str] = None
     MISTRAL_API_KEY: Optional[str] = None
     FIRECRAWL_API_KEY: Optional[str] = None

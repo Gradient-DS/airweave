@@ -14,10 +14,19 @@ from airweave.core.config import settings
 def get_default_vector_size() -> int:
     """Auto-detect vector size based on embedding model configuration.
 
+    Priority order:
+        1. EMBEDDING_DIM if explicitly set (for custom models)
+        2. 3072 if OpenAI API key is set (text-embedding-3-large)
+        3. 384 otherwise (MiniLM-L6-v2)
+
     Returns:
-        3072 if OpenAI API key is set (text-embedding-3-large)
-        384 otherwise (MiniLM-L6-v2)
+        Vector dimension size for embedding model
     """
+    # Check for explicit dimension override first
+    if settings.EMBEDDING_DIM is not None:
+        return settings.EMBEDDING_DIM
+
+    # Fall back to API key-based detection
     return 3072 if settings.OPENAI_API_KEY else 384
 
 
@@ -25,15 +34,14 @@ def get_physical_collection_name(vector_size: int | None = None) -> str:
     """Get physical Qdrant collection name based on vector size.
 
     Args:
-        vector_size: Vector dimensions. Auto-detected if None:
-                     - 3072 if OpenAI API key is set (text-embedding-3-large)
-                     - 384 otherwise (MiniLM-L6-v2)
+        vector_size: Vector dimensions. Auto-detected if None.
 
     Returns:
         Physical collection name in Qdrant:
         - "airweave_shared_text_embedding_3_large" for 3072-dim vectors
         - "airweave_shared_text_embedding_3_small" for 1536-dim vectors
-        - "airweave_shared_minilm_l6_v2" for 384-dim vectors (default for other sizes)
+        - "airweave_shared_minilm_l6_v2" for 384-dim vectors
+        - "airweave_shared_custom_{dim}" for other dimensions (custom models)
     """
     if vector_size is None:
         vector_size = get_default_vector_size()
@@ -42,8 +50,11 @@ def get_physical_collection_name(vector_size: int | None = None) -> str:
         return "airweave_shared_text_embedding_3_large"
     elif vector_size == 1536:
         return "airweave_shared_text_embedding_3_small"
-    else:
+    elif vector_size == 384:
         return "airweave_shared_minilm_l6_v2"
+    else:
+        # Custom dimension - use generic naming
+        return f"airweave_shared_custom_{vector_size}"
 
 
 def get_openai_embedding_model_for_vector_size(vector_size: int) -> str:
