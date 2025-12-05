@@ -130,6 +130,15 @@ class Settings(BaseSettings):
     EMBEDDING_DIM: Optional[int] = None  # Custom embedding dimension override
     ANTHROPIC_API_KEY: Optional[str] = None
     MISTRAL_API_KEY: Optional[str] = None
+    USE_SIMPLE_PARSING: bool = Field(
+        default=False,
+        description=(
+            "Use simple Python-based document parsing instead of LLM-based parsing. "
+            "When enabled, uses local libraries (pypdf2, python-docx, etc.) instead of "
+            "Mistral API. Reduces costs and enables offline operation but may have "
+            "lower quality text extraction for complex documents."
+        ),
+    )
     FIRECRAWL_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     COHERE_API_KEY: Optional[str] = None

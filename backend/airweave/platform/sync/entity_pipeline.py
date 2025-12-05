@@ -875,6 +875,7 @@ class EntityPipeline:
         Raises:
             EntityProcessingError: If file type is not supported
         """
+        from airweave.core.config import settings
         from airweave.platform import converters
 
         _, ext = os.path.splitext(file_path)
@@ -884,16 +885,30 @@ class EntityPipeline:
         if ext not in SUPPORTED_FILE_EXTENSIONS:
             raise EntityProcessingError(f"Unsupported file type: {ext}")
 
+        # Determine which converters to use based on USE_SIMPLE_PARSING setting
+        if settings.USE_SIMPLE_PARSING:
+            # Use simple (API-free) converters
+            pdf_converter = converters.simple_pdf_converter
+            docx_converter = converters.simple_docx_converter
+            pptx_converter = converters.simple_pptx_converter
+            image_converter = converters.simple_image_converter
+        else:
+            # Use Mistral (LLM-based) converters
+            pdf_converter = converters.mistral_converter
+            docx_converter = converters.mistral_converter
+            pptx_converter = converters.mistral_converter
+            image_converter = converters.mistral_converter
+
         # Map extensions to converter modules
         converter_map = {
-            # Mistral OCR - Documents
-            ".pdf": converters.mistral_converter,
-            ".docx": converters.mistral_converter,
-            ".pptx": converters.mistral_converter,
-            # Mistral OCR - Images
-            ".jpg": converters.mistral_converter,
-            ".jpeg": converters.mistral_converter,
-            ".png": converters.mistral_converter,
+            # Documents
+            ".pdf": pdf_converter,
+            ".docx": docx_converter,
+            ".pptx": pptx_converter,
+            # Images
+            ".jpg": image_converter,
+            ".jpeg": image_converter,
+            ".png": image_converter,
             # XLSX - local extraction
             ".xlsx": converters.xlsx_converter,
             # HTML
