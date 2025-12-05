@@ -6,8 +6,8 @@ from typing import Dict, List
 
 from pdfminer.high_level import extract_text as pdfminer_extract_text
 
-from airweave.core.exceptions import EntityProcessingError
 from airweave.platform.sync.async_helpers import run_in_thread_pool
+from airweave.platform.sync.exceptions import EntityProcessingError
 from airweave.platform.converters._base import BaseTextConverter
 
 

@@ -6,8 +6,8 @@ from typing import Dict, List
 
 from PIL import Image
 
-from airweave.core.exceptions import EntityProcessingError
 from airweave.platform.sync.async_helpers import run_in_thread_pool
+from airweave.platform.sync.exceptions import EntityProcessingError
 from airweave.platform.converters._base import BaseTextConverter
 
 
