@@ -470,7 +470,20 @@ class PostgreSQLConfig(SourceConfig):
 class SharePointConfig(SourceConfig):
     """SharePoint configuration schema."""
 
-    pass
+    site_url: Optional[str] = Field(
+        None,
+        title="Site URL",
+        description=(
+            "Specific SharePoint site URL to sync (e.g., "
+            "'https://tenant.sharepoint.com/sites/mysite'). "
+            "Leave empty to sync the root site. "
+            "Use the full URL from your SharePoint site's address bar."
+        ),
+        json_schema_extra={
+            "ui:widget": "text",
+            "ui:placeholder": "https://tenant.sharepoint.com/sites/mysite",
+        },
+    )
 
 
 class SlackConfig(SourceConfig):

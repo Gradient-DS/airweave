@@ -75,6 +75,13 @@ class SharePointSource(BaseSource):
         """Create a new SharePoint source instance with the provided OAuth access token."""
         instance = cls()
         instance.access_token = access_token
+
+        # Extract site URL from config (optional)
+        if config and config.get("site_url"):
+            instance.site_url = config["site_url"].strip()
+        else:
+            instance.site_url = None
+
         return instance
 
     @retry(
@@ -283,16 +290,92 @@ class SharePointSource(BaseSource):
             self.logger.error(f"Error generating group entities: {str(e)}")
             raise
 
+    async def _resolve_site_url_to_id(
+        self, client: httpx.AsyncClient, site_url: str
+    ) -> Optional[str]:
+        """Resolve a SharePoint site URL to its Graph API site ID.
+
+        Microsoft Graph API requires site IDs for most operations. This method
+        converts a user-friendly site URL to the internal site ID.
+
+        Args:
+            client: HTTP client with authentication
+            site_url: Full SharePoint site URL (e.g., 'https://tenant.sharepoint.com/sites/mysite')
+
+        Returns:
+            Site ID string (e.g., 'tenant.sharepoint.com,{guid},{guid}')
+            Returns None if resolution fails
+
+        Examples:
+            Input: 'https://contoso.sharepoint.com/sites/marketing'
+            Output: 'contoso.sharepoint.com,abc123-...,def456-...'
+
+            Input: 'https://contoso.sharepoint.com' (root site)
+            Returns: None (caller should use '/sites/root' endpoint)
+        """
+        try:
+            # Parse the URL to extract hostname and path
+            from urllib.parse import urlparse
+
+            parsed = urlparse(site_url)
+            hostname = parsed.hostname  # e.g., 'tenant.sharepoint.com'
+            path = parsed.path.strip("/")  # e.g., 'sites/mysite'
+
+            if not hostname:
+                self.logger.error(f"Invalid site URL: {site_url} (no hostname)")
+                return None
+
+            # If no path or just root, return None to signal use of /sites/root
+            if not path or path == "/":
+                self.logger.debug("Site URL is root, will use /sites/root endpoint")
+                return None
+
+            # Microsoft Graph API endpoint for resolving site by URL
+            # Format: /sites/{hostname}:/{path}:
+            # Example: /sites/contoso.sharepoint.com:/sites/marketing:
+            graph_site_path = f"{hostname}:/{path}:"
+            url = f"{self.GRAPH_BASE_URL}/sites/{graph_site_path}"
+
+            self.logger.debug(f"Resolving site URL to ID via: {url}")
+
+            response = await self._get_with_auth(client, url)
+
+            # Extract site ID from response
+            site_id = response.get("id")
+            if not site_id:
+                self.logger.error(f"No site ID returned for URL: {site_url}")
+                return None
+
+            self.logger.info(f"Resolved site URL '{site_url}' to site ID: {site_id}")
+            return site_id
+
+        except Exception as e:
+            self.logger.error(f"Failed to resolve site URL '{site_url}': {e}")
+            return None
+
     async def _generate_site_entities(
-        self, client: httpx.AsyncClient
+        self, client: httpx.AsyncClient, site_id: Optional[str] = None
     ) -> AsyncGenerator[SharePointSiteEntity, None]:
-        """Generate SharePointSiteEntity objects starting from the root site."""
-        self.logger.debug("Starting site entity generation")
+        """Generate SharePointSiteEntity objects for a specific site or root site.
+
+        Args:
+            client: HTTP client with authentication
+            site_id: Optional site ID. If None, fetches root site. If provided, fetches that specific site.
+
+        Yields:
+            SharePointSiteEntity: Site entity with metadata
+        """
+        self.logger.debug(f"Starting site entity generation (site_id={site_id or 'root'})")
 
         try:
-            # Get the root site
-            url = f"{self.GRAPH_BASE_URL}/sites/root"
-            self.logger.debug(f"Fetching root site from: {url}")
+            # Determine endpoint based on whether site_id is provided
+            if site_id:
+                url = f"{self.GRAPH_BASE_URL}/sites/{site_id}"
+                self.logger.debug(f"Fetching specific site from: {url}")
+            else:
+                url = f"{self.GRAPH_BASE_URL}/sites/root"
+                self.logger.debug(f"Fetching root site from: {url}")
+
             site_data = await self._get_with_auth(client, url)
 
             site_id = site_data.get("id")
@@ -1020,20 +1103,44 @@ class SharePointSource(BaseSource):
                     )
                     yield group_entity
 
-                # 3) Generate site entities (start with root site)
+                # 3) Generate site entities
                 self.logger.debug("Generating site entities...")
+
+                # Determine which site to fetch
+                site_id_to_fetch = None
+                if hasattr(self, "site_url") and self.site_url:
+                    self.logger.info(f"Resolving configured site URL: {self.site_url}")
+                    site_id_to_fetch = await self._resolve_site_url_to_id(
+                        client, self.site_url
+                    )
+
+                    if site_id_to_fetch:
+                        self.logger.info(
+                            f"Successfully resolved to site ID: {site_id_to_fetch}"
+                        )
+                    else:
+                        self.logger.warning(
+                            f"Failed to resolve site URL '{self.site_url}', "
+                            "falling back to root site"
+                        )
+                else:
+                    self.logger.info("No site URL configured, using root site")
+
+                # Generate site entity (pass site_id if resolved)
                 site_entity = None
-                async for site in self._generate_site_entities(client):
+                async for site in self._generate_site_entities(client, site_id_to_fetch):
                     entity_count += 1
                     self.logger.debug(
                         f"Yielding entity #{entity_count}: Site - {site.display_name}"
                     )
                     yield site
                     site_entity = site
-                    break  # For now, just process root site
+                    break  # Still process only one site
 
                 if not site_entity:
-                    self.logger.error("No site found")
+                    self.logger.warning(
+                        "No site entity generated, skipping site-specific content"
+                    )
                     return
 
                 # Create site breadcrumb for child entities
@@ -1077,9 +1184,36 @@ class SharePointSource(BaseSource):
             )
 
     async def validate(self) -> bool:
-        """Verify SharePoint OAuth2 token by pinging the sites endpoint."""
-        return await self._validate_oauth2(
-            ping_url=f"{self.GRAPH_BASE_URL}/sites/root",
-            headers={"Accept": "application/json"},
-            timeout=10.0,
-        )
+        """Verify SharePoint OAuth2 token by pinging the configured site or root site.
+
+        Returns:
+            True if token is valid and site is accessible, False otherwise
+        """
+        async with self.http_client() as client:
+            try:
+                # Determine validation endpoint
+                if hasattr(self, "site_url") and self.site_url:
+                    self.logger.debug(
+                        f"Validating against configured site: {self.site_url}"
+                    )
+                    site_id = await self._resolve_site_url_to_id(client, self.site_url)
+
+                    if site_id:
+                        ping_url = f"{self.GRAPH_BASE_URL}/sites/{site_id}"
+                    else:
+                        self.logger.warning(
+                            "Could not resolve site URL, validating root site"
+                        )
+                        ping_url = f"{self.GRAPH_BASE_URL}/sites/root"
+                else:
+                    self.logger.debug("No site URL configured, validating root site")
+                    ping_url = f"{self.GRAPH_BASE_URL}/sites/root"
+
+                return await self._validate_oauth2(
+                    ping_url=ping_url,
+                    headers={"Accept": "application/json"},
+                    timeout=10.0,
+                )
+            except Exception as e:
+                self.logger.error(f"Validation failed: {e}")
+                return False
