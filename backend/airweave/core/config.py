@@ -5,7 +5,7 @@ Wraps environment variables and provides defaults.
 
 from typing import Optional
 
-from pydantic import PostgresDsn, ValidationInfo, field_validator
+from pydantic import Field, PostgresDsn, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings
 
 
